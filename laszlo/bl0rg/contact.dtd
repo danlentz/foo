@@ -1,0 +1,5 @@
+<!ELEMENT contact EMPTY>
+<!ATTLIST contact firstName CDATA #REQUIRED
+                  lastName  CDATA #REQUIRED
+                  phone     CDATA #REQUIRED
+                  email     CDATA #REQUIRED>

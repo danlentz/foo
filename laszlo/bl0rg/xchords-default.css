@@ -1,0 +1,51 @@
+/*
+ xchords-default.css
+
+ External CSS style for use with SVG images of chords, produced by XChords utility.
+ http://xchords.sourceforge.net
+
+ Changes:
+ 25.11.2005 - copied from inner style and documented - M. Mocek
+*/
+
+/* Label of chord (at the left of the neck) */ 
+.label { fill:black; stroke: black; font-size:50px; text-anchor: middle; } 
+
+/* Neck borders */
+.neck { fill:none; stroke:black; stroke-width:2px; }
+
+/* Endneck element line style */
+.endneck { fill:none; stroke:black; stroke-width:14px; }
+
+/* Fret line style */
+.frets { fill:black; stroke: black; stroke-width: 1px; }
+
+/* String line style */
+.strings { stroke: gray; }
+
+/* Dot around the finger numbers style */
+.dot { fill:black; stroke: black; }
+
+/* Empty dot style - for use with 'optional' value in 'state' attribute of 'string' element in xchords xml */
+.emptydot { fill:white; stroke: black; }
+
+/* Disabled string style - X */
+.disabled { stroke: black; stroke-width: 2px; }
+
+/* Spacer between positions inner style */
+.spacer {fill:white; stroke:white; stroke-width:1px}
+
+/* Spacer between positions style */
+.spacerline {fill:none; stroke:black;}
+
+/* Finger number style */
+.finger {stroke:white; fill:white; font-size:23px;}
+
+/* Barre finger number style */
+.barrenum {stroke:black; fill:black; font-size:35px; text-anchor:end;}
+
+/* Note above the picture style */
+.note {stroke: gray; fill:gray; font-size:20px;}
+
+/* Barre line style */
+.barre { stroke:black; stroke-width: 6px; }

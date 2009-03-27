@@ -1,0 +1,495 @@
+Building OpenLaszlo applications using Common Lisp
+
+<p>I have to gotten myself a small university job where I have to build a
+web application using OpenLaszlo (http://openlaszlo.org/). OpenLaszlo
+is a programming language / development framework to build web
+applications based on javascript and XML. Actually it is pretty
+similar to all the AJAX stuff we see sprouting everywhere, except that
+HTML is replaced by some kind of XML layout language. The application
+is compiled to a flash swf file by the OpenLaszlo compiler, and can be
+deployed in a static way (copying the swf file to a web server), or
+using the OpenLaszlo middleware, which can convert HTTP calls from the
+flash file to Java calls, cache resources, proxy stuff, etc... The
+approach is pretty neat, the GUI is slick, quite a lot of
+documentation and demo applications are available, there are no
+portability problems across browsers (once you've got flash, but that
+runs almost everywhere). Really neat, but who wants to write a
+mashed-up mess of XML and Javascript?</p>
+
+<p>That's where Common Lisp comes into play. I have reworked my muddy
+pile of crap ParenScript, which is some kind of Lisp to Javascript
+compiler, and taken the HTML generator from Peter Seibel's wonderful
+book "Practical Common Lisp", and glued them together to produce
+human-readable OpenLaszlo XML files (called LZX files). I used my old
+subversion checkout of Parenscript, and not the version maintained by
+Marco Baringer, although I should do that, I guess. Let's take a look
+at such an LZX file:</p>
+
+<pre>
+&lt;canvas&gt;
+  &lt;text&gt;foobar&lt;/text&gt;
+&lt;/canvas&gt;
+</pre>
+
+<p>This is a very simple Laszlo application, which will only show the
+text "foobar". The Lisp equivalent of this program is:</p>
+
+<pre>
+(laszlo-file "empty.lzx"
+  (:canvas
+    (:text "foobar")))
+</pre>
+
+<p>LASZLO-FILE is some kind of workaround, it will interpret the body as
+an XML construct and write the results to the file "empty.lzx" in my
+openlaszlo development directory, where it can be accessed through the
+tomcat webserver runinng the openlaszlo java program.</p>
+
+<p><pre>(:canvas (:text "foobar"))</pre> is converted to XML using a hacked-up
+version of Peter Seibel's HTML generator. It has a few different
+features. For example, node symbols are interpreted using
+ParenScript's SYMBOL-TO-JS function, so for example the following
+laszlo program:</p>
+
+<pre>
+(laszlo-file "symbols.lzx"
+  (:canvas
+    ((:dataset :name "foobar")
+        (:my-node (:my-data "Foobar")))))
+</pre>
+
+<p>is converted to (notice the camelcase):</p>
+
+<pre>
+&lt;canvas&gt;
+  &lt;dataset name='foobar'&gt;
+    &lt;myNode&gt;
+      &lt;myData&gt;Foobar&lt;/myData&gt;
+    &lt;/myNode&gt;
+  &lt;/dataset&gt;
+&lt;/canvas&gt;
+</pre>
+
+<p>
+The most important feature though is the integration of parenscript
+into attributes which begin with "on" (for events in Laszlo), and into
+the :method and :script nodes. For example:
+</p>
+
+<pre>
+(laszlo-file "js-example.lzx"
+  (:canvas
+   (:view
+    (:simplelayout :axis :y :spacing 15)
+    (:text :onclick (parent.toggle-text.set-visible
+		     (not parent.toggle-text.visible))
+	   "Click here")
+    (:text :name :toggle-text :bgcolor "#CDCDCD" :visible :false "Toggle text"))))
+</pre>
+
+<p>
+Here the onclick attribute of the first text is a ParenScript
+expression, the resulting XML is:
+</p>
+
+<pre>
+1: &lt;canvas&gt;
+2:   &lt;view&gt;
+3:     &lt;simplelayout axis='y' spacing='15'/&gt;
+4:     &lt;text onclick='parent.toggleText.setVisible(!parent.toggleText.visible)'&gt;Click here&lt;/text&gt;
+5:     &lt;text name='toggleText' bgcolor='#CDCDCD' visible='false'&gt;Toggle text&lt;/text&gt;
+6:   &lt;/view&gt;
+7: 
+8: &lt;/canvas&gt;
+</pre>
+
+<p>
+The XML generator has a few special operators designed for laszlo
+applications: :JS emits javascript code, :CONSTRAINT generate a laszlo
+constraint expression, :JSMETHOD allows us to use a more "traditional"
+style of declaring methods, and :JSEVENT a more traditional way to
+declare event methods:
+</p>
+
+<pre>
+(laszlo-file "xml-showoff.lzx"
+  (:canvas :debug :true
+    (:text :width (:constraint :once parent.width) "Hello"
+      (:jsevent ondata ()
+         (-debug.write "Hello"))
+      (:jsmethod my-method (arg1 arg2 arg3)
+         (return (+ arg1 arg2 arg3))))))
+</pre>
+
+<p>generates:</p>
+
+<pre>
+1: &lt;canvas debug='true'&gt;
+2:   &lt;text width='$once{parent.width}'&gt;
+3:     Hello
+4:     &lt;method event='ondata' args=''&gt;
+5:       Debug.write("Hello");
+6:     &lt;/method&gt;
+7: 
+8:     &lt;method name='myMethod' args='arg1,arg2,arg3'&gt;
+9:       return arg1 + arg2 + arg3;
+10:     &lt;/method&gt;
+11: 
+12:   &lt;/text&gt;
+13: &lt;/canvas&gt;
+</pre>
+
+<p>ParenScript also includes a feature to generate LzDataElement XML
+representations (this uses a small library fragment, which may be
+expanded as needed in future times):</p>
+
+<pre>
+(laszlo-file "xml-lib.lzx"
+  (:library
+   (:script
+    (defun make-simple-node (name attrs text)
+      (return (new (-lz-data-element name attrs (list (new (-lz-data-text text))))))))))
+
+(laszlo-file "xml-generation.lzx"
+  (:canvas :debug :true
+   (:include :href "xml-lib.lzx")
+   (:text "Generate XML"
+     (:jsevent onclick ()
+       (xml ret (:foobar (:a :arg 1 "data")
+			 (:b :arg 2 "more data")
+			 (:c (:d))))
+       (-debug.write (ret.serialize))))))
+</pre>
+
+<p>which generates:</p>
+
+<pre>
+1: &lt;canvas debug='true'&gt;
+2:   &lt;include href='xml-lib.lzx'/&gt;
+3:   &lt;text&gt;
+4:     Generate XML
+5:     &lt;method event='onclick' args=''&gt;
+6:       var ret = new LzDataElement("foobar");
+7:       ret.appendChild(makeSimpleNode("a", { arg : 1 }, "data"));
+8:       ret.appendChild(makeSimpleNode("b", { arg : 2 }, "more data"));
+9:       var ret0 = new LzDataElement("c");
+10:       ret.appendChild(ret0);
+11:       var ret1 = new LzDataElement("d");
+12:       ret0.appendChild(ret1);
+13:       Debug.write(ret.serialize());
+14:     &lt;/method&gt;
+15: 
+16:   &lt;/text&gt;
+17: &lt;/canvas&gt;
+</pre>
+
+<p>Furthermore, the BKNR xml-impex functionality was expanded to allow
+for parsing of XML update files. For example, when we have the
+following class declaration:</p>
+
+<pre>
+(defparameter *root-path*
+  "C:/Documents and Settings/manuel/My Documents/local-svn/laszlo/")
+
+(defparameter *contact-dtd*
+  (cxml:parse-dtd-file (merge-pathnames "contact.dtd" *root-path*)))
+
+(defclass contact ()
+  ((first-name :initarg :first-name :accessor first-name
+	       :attribute "firstName")
+   (last-name :initarg :last-name :accessor last-name
+	      :attribute "lastName")
+   (phone :initarg :phone :accessor phone
+	  :attribute "phone")
+   (email :initarg :email :accessor email
+	  :index-type unique-index
+	  :index-initargs (:test #'equal)
+	  :index-reader contact-with-email
+	  :index-values all-contacts
+	  :attribute "email"))
+  (:unique-id-slot email)
+  (:unique-id-reader #'contact-with-email)
+  (:metaclass xml-class)
+  (:dtd *contact-dtd*)
+  (:element "contact"))
+
+(defmethod print-object ((c contact) stream)
+  (print-unreadable-object (c stream :type t)
+    (with-slots (first-name last-name email) c
+      (format stream "\"~A ~A\" (~A)" first-name last-name email))))
+
+
+(net.aserve:publish :path "/phonebook"
+		    :content-type "text/xml"
+		    :function #'(lambda (req ent)
+				  (xml-to-http (req ent)
+
+(make-instance 'contact
+	       :first-name "Manuel"
+	       :last-name "Odendahl"
+	       :phone "2394802934"
+	       :email "manuel@bl0rg.net")
+
+EXAMPLES> (all-contacts)
+(#&lt;CONTACT "Manuel Odendahl" (manuel@bl0rg.net)&gt;)
+
+EXAMPLES> (write-to-xml (all-contacts) :name "contacts")
+&lt;contacts&gt;
+   &lt;contact email="manuel@bl0rg.net" firstName="Manuel" lastName="Odendahl" phone="2394802934"/&gt;
+&lt;/contacts&gt;
+</pre>
+
+<p>We can parse the following "update.xml" file:</p>
+
+<pre>
+&lt;updates&gt;&lt;contact email='manuel@bl0rg.net'lastName='foobar'/&gt;&lt;/updates&gt;
+
+EXAMPLES> (parse-xml-update-file "update.xml" (list (find-class 'contact)))
+updating slot LAST-NAME with "foobar"
+(:CONTACT (#lt;CONTACT "Manuel foobar" (manuel@bl0rg.net))&gt;)
+</pre>
+
+<p>This can be further wrapped into a web service:</p>
+
+<pre>
+(net.aserve:publish :path "/phonebook"
+		    :content-type "text/xml"
+		    :function #'(lambda (req ent)
+				  (xml-to-http (req ent)
+					       (all-contacts) :name "phonebook")))
+
+(defun phonebook-update (req)
+  (with-query-params (req action xml pk)
+    (warn "action ~A, xml ~A" action xml)
+    (cond
+      ((string= action "insert")
+       (insert-xml-class 'contact xml :parse #'bknr.impex:parse-xml-stream))
+      ((string= action "update")
+       (update-xml-class 'contact xml :parse #'bknr.impex:parse-xml-update-stream))
+      ((string= action "delete")
+       (destroy-object (contact-with-email pk))))))
+
+(net.aserve:publish :path "/phonebook-update"
+		    :content-type "text/xml"
+		    :function #'(lambda (req ent)
+				  (handler-case (phonebook-update req)
+				    (error (e)
+				      (warn "error: ~A" e)
+				      (xml-http-output (req ent)
+						       (:result "failure")))
+				    (:no-error (e)
+				      (declare (ignore e))
+				      (xml-http-output (req ent)
+						       (:result "success"))))))
+
+
+(net.aserve:start :port 8081)
+</pre>
+
+<p>Which allows to rebuild the example data application out of the laszlo
+developer manual using Lisp:</p>
+
+<pre>
+(laszlo-file "data-app8.lzx"
+  ((:canvas :bgcolor "#D4D0C8" :debug "true")
+   (:include :href "xml-lib.lzx")
+   (:dataset :name "dset" :src "http://localhost:8081/phonebook" :request "true" :type "http")
+
+   ((:dataset :name "dsSendData" :request "false" :src "http://localhost:8081/phonebook-update"
+	      :type "http"))
+
+   ((:datapointer :xpath "dsSendData:/")
+    ((:method :event "ondata")
+     (if (= (this.xpath-query "result/text()") "success")
+	 (-Debug.write "Operation succeeded")
+	 (-Debug.write "Operation failed"))))
+
+   ((:class :name "contactview" :extends "view" :visible "false" :x 20 :height 120)
+    (:text :name "pk" :visible "false" :datapath "@email")
+    (:text :y 10 "First Name:")
+    (:edittext :name "firstName" :datapath "@firstName" :x 80 :y 10)
+    (:text :y 35 "Last Name:")
+    (:edittext :name "lastName" :datapath "@lastName" :x 80 :y 35)
+    (:text :y 60 "Phone:")
+    (:edittext :name "phone" :datapath "@phone" :x 80 :y 60)
+    (:text :y 85 "Email:")
+    (:edittext :name "email" :datapath "@email" :x 80 :y 85)
+
+    ((:method :name "sendData" :args "action")
+     (let ((d canvas.datasets.ds-send-data)
+	   (p (new -lz-param)))
+       (xml xmlret (:update (:contact :first-name (first-name.get-text)
+				      :last-name (last-name.get-text)
+				      :phone (phone.get-text)
+				      :email (email.get-text))))
+       (p.add-value "action" action t)
+       (p.add-value "xml" (xmlret.serialize) t)
+       (p.add-value "pk" (pk.get-text) t)
+       (d.set-query-string p)
+       (d.do-request))))
+
+   (:simplelayout :axis "y")
+
+   (:view
+    (:simplelayout :axis "y")
+    (:text :onclick (parent.new-contact.set-visible (not parent.new-contact.visible))
+	   "New Entry...")
+
+    ((:contactview :name "newContact" :datapath "new:/contact")
+     ((:button :width 80 :x 200 :y 10) "Add"
+      ((:method :event "onclick")
+       (parent.send-data "insert")
+       (parent.datapath.update-data)
+       (let ((dp (canvas.datasets.dset.get-pointer)))
+	 (dp.select-child)
+	 (dp.add-node-from-pointer parent.datapath)
+	 (parent.set-visible false)
+	 (parent.set-datapath "new:/contact")))))
+    
+    ((:view :datapath "dset:/phonebook/contact")
+     (:simplelayout :axis "y")
+     ((:view :name "list" :onclick (parent.update-contact.set-visible
+				    (not parent.update-contact.visible)))
+      (:simplelayout :axis "x")
+      (:text :datapath "@firstName")
+      (:text :datapath "@lastName")
+      (:text :datapath "@phone")
+      (:text :datapath "@email"))
+
+     ((:contactview :name "updateContact")
+      ((:button :width 80 :x 200 :y 10) "Update"
+       ((:method :event "onclick")
+	(parent.send-data "update")
+	(parent.parent.datapath.update-data)))
+
+      ((:button :width 80 :x 200 :y 40) "Delete"
+       ((:method :event "onclick")
+	(parent.send-data "delete")
+	(parent.parent.datapath.delete-node))))))
+   
+    (:debug :width 600 :height 120)))
+</pre>
+
+<p>
+Now this is still much to write, and there is no persistence on the
+server side. The persistence is handled by the BKNR datastore, and a
+few wrappers enable us to pack everything into a few lines:
+</p>
+
+<pre>
+(defvar *user-dtd*
+  (cxml:parse-dtd-file "user.dtd"))
+
+(define-persistent-class user (xml-store-object)
+  ((first-name :update :element "firstName")
+   (last-name :update :element "lastName")
+   (vat-number :update :element "vatNumber")
+   (email :update :index-type string-unique-index
+	  :index-reader user-with-email
+	  :index-values all-users
+	  :element "email"))
+  (:metaclass persistent-xml-class)
+  (:dtd *user-dtd*)
+  (:element "user"))
+
+(defmethod print-object ((user user) stream)
+  (print-unreadable-object (user stream :type t)
+    (with-slots (first-name last-name email) user
+      (format stream "~a ~a (~a)" first-name last-name email))))
+
+(make-instance 'mp-store :directory "C:/Documents and Settings/manuel/My Documents/laszlo-store/"
+	       :subsystems (list (make-instance 'store-object-subsystem)))
+
+(make-object 'user
+	     :first-name "Manuel"
+	     :last-name "Odendahl"
+	     :vat-number "23849"
+	     :email "manuel@bl0rg.net")
+
+(publish-xml-handler 'user)
+
+(laszlo-file "userdemo.lzx"
+  ((:canvas :height 400 :debug "true")
+
+   (:include :href "xml-lib.lzx")
+
+   (:dataset :name "user" :src "http://127.0.0.1:8081/user/0" :type "http" :autorequest "true")
+
+   ((:dataset :name "updateDs" :src "http://127.0.0.1:8081/user" :type "http"
+	      :request "false" :autorequest "false"))
+
+   ;;; wieso wird der scheiss nicht dann aufgerufen, wenn er aufgerufen werden soll? XXX
+   ((:datapointer :xpath "updateDs:/")
+    ((:method :event "ondata")
+     (-debug.write (+ "on-data" (.serialize (this.get-dataset))))
+     (-debug.write (this.xpath-query "/result[1]/text()"))
+     (if (= (this.xpath-query "/result[1]/text()") "success")
+	 (-debug.write "update was successful")
+	 (-debug.write "update was not successful"))))
+   
+   (:datapointer :id "userdp" :xpath "user:/user[1]")
+
+   (:simplelayout :axis "y")
+
+   (:jsmethod edit-user ()
+     (if this.edit-data.visible
+	 (this.user.do-request)
+	 (this.edit-data.set-data))
+	 
+     (this.show-data.set-visible (not this.show-data.visible))
+     (this.edit-data.set-visible (not this.edit-data.visible)))
+
+   ((:view :name "showData" :datapath "user:/user[1]" :visible "true")
+    (:text :x 0 :y 0 "First Name:")
+    (:text :x 150 :y 0 :name "firstName" :datapath "firstName/text()")
+    (:text :x 0 :y 25 "Last Name:")
+    (:text :x 150 :y 25 :name "lastName" :datapath "lastName/text()")
+    (:text :x 0 :y 50 "VAT Number:")
+    (:text :x 150 :y 50 :name "vatNumber" :datapath "vatNumber/text()")
+    (:button :y 100 :onclick (parent.parent.edit-user) "Edit Data"))
+   
+   ((:view :name "editData" :visible "false")
+    (:jsmethod set-data ()
+       (this.first-name.set-text (userdp.xpath-query "/user[1]/firstName/text()"))
+       (this.last-name.set-text  (userdp.xpath-query "/user[1]/lastName/text()"))
+       (this.vat-number.set-text (userdp.xpath-query "/user[1]/vatNumber/text()")))
+
+    (:jsmethod update-data ()
+       (xml update (:update ((:user :id (userdp.xpath-query "/user[1]/@id"))
+			     (:first-name (this.first-name.get-text))
+			     (:last-name  (this.last-name.get-text))
+			     (:vat-number (this.vat-number.get-text)))))
+       (let ((p (new -lz-param)))
+	 (p.add-value "action" "update" t)
+	 (p.add-value "update" (update.serialize) t)
+	 (update-ds.set-query-string p)
+	 (-debug.write "update-ds.do-request")
+	 (update-ds.do-request)
+	 (this.parent.edit-user)))
+    
+    (:text :x 0 :y 0 "First Name:")
+    (:edittext :x 150 :y 0 :name "firstName")
+    (:text :x 0 :y 25 "Last Name:")
+    (:edittext :x 150 :y 25 :name "lastName")
+    (:text :x 0 :y 50 "VAT Number:")
+    (:edittext :x 150 :y 50 :name "vatNumber")
+
+    (:button :y 100 :onclick (parent.update-data) "Update Data"))
+
+   ((:button :onclick (progn (parent.form.datapath.update-data)
+			     (t.set-text (userprofile.serialize)))) "Show XML data")
+   (:inputtext :multiline "true"
+	       :width (:constraint nil canvas.width)
+	       :bgcolor "0xa0a0a0"
+	       :id "t"
+	       :height 300)
+   (:debug)))
+</pre>
+
+<p>
+Now all this code is extremely brittle (it has been about a year since
+my last programming), quickly hacked together and by no means
+finished. I won't even suggest you to get it to work, and I only
+include a dump of my local-svn containing the XML and ParenScript for
+sakes of completeness (the IMPEX and persistence stuff is not ready
+for release) (laszlo.zip).</p>

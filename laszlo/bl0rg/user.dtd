@@ -1,0 +1,6 @@
+<!ELEMENT user (firstName,lastName,vatNumber,email)>
+<!ATTLIST user id ID #REQUIRED>
+<!ELEMENT firstName #PCDATA>
+<!ELEMENT lastName #PCDATA>
+<!ELEMENT vatNumber #PCDATA>
+<!ELEMENT email #PCDATA>
